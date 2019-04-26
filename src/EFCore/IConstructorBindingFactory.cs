@@ -1,11 +1,13 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
-using System;
+using System.Collections.Generic;
+using System.Reflection;
 using JetBrains.Annotations;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Microsoft.EntityFrameworkCore.Metadata.Internal
+namespace Microsoft.EntityFrameworkCore
 {
     /// <summary>
     ///     <para>
@@ -20,7 +22,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
     ///         This service cannot depend on services registered as <see cref="ServiceLifetime.Scoped" />.
     ///     </para>
     /// </summary>
-    public interface IParameterBindingFactories
+    public interface IConstructorBindingFactory
     {
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -28,6 +30,10 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        IParameterBindingFactory FindFactory([NotNull] Type type, [NotNull] string name);
+        bool TryBindConstructor(
+            [NotNull] IMutableEntityType entityType,
+            [NotNull] ConstructorInfo constructor,
+            [CanBeNull] out ConstructorBinding binding,
+            [CanBeNull] out IEnumerable<ParameterInfo> failedBindings);
     }
 }

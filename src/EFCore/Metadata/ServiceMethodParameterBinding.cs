@@ -1,10 +1,14 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 using JetBrains.Annotations;
 
-namespace Microsoft.EntityFrameworkCore.Metadata.Internal
+namespace Microsoft.EntityFrameworkCore.Metadata
 {
     /// <summary>
     ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -12,24 +16,22 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
     ///     any release. You should only use it directly in your code with extreme caution and knowing that
     ///     doing so can result in application failures when updating to a new Entity Framework Core release.
     /// </summary>
-    public readonly struct ParameterBindingInfo
+    public class ServiceMethodParameterBinding : DefaultServiceParameterBinding
     {
-        private readonly int[] _indexMap;
-
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
         ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        public ParameterBindingInfo(
-            [NotNull] IEntityType entityType,
-            [NotNull] Expression materializationContextExpression,
-            [CanBeNull] int[] indexMap)
+        public ServiceMethodParameterBinding(
+            [NotNull] Type parameterType,
+            [NotNull] Type serviceType,
+            [NotNull] MethodInfo method,
+            [CanBeNull] IPropertyBase consumedProperty = null)
+            : base(parameterType, serviceType, consumedProperty)
         {
-            _indexMap = indexMap;
-            EntityType = entityType;
-            MaterializationContextExpression = materializationContextExpression;
+            Method = method;
         }
 
         /// <summary>
@@ -38,7 +40,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        public IEntityType EntityType { get; }
+        public virtual MethodInfo Method { get; }
 
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -46,15 +48,36 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        public Expression MaterializationContextExpression { get; }
+        public override Expression BindToParameter(
+            Expression materializationExpression,
+            Expression entityTypeExpression)
+        {
+            var parameters = Method.GetParameters().Select(
+                (p, i) => Expression.Parameter(p.ParameterType, "param" + i)).ToArray();
 
-        /// <summary>
-        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
-        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
-        ///     any release. You should only use it directly in your code with extreme caution and knowing that
-        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
-        /// </summary>
-        public int GetValueBufferIndex([NotNull] IPropertyBase property)
-            => _indexMap?[property.GetIndex()] ?? property.GetIndex();
+            var serviceVariable = Expression.Variable(ServiceType, "service");
+            var delegateVariable = Expression.Variable(ParameterType, "delegate");
+
+            return Expression.Block(
+                new[] { serviceVariable, delegateVariable },
+                new List<Expression>
+                {
+                    Expression.Assign(
+                        serviceVariable,
+                        base.BindToParameter(materializationExpression, entityTypeExpression)),
+                    Expression.Assign(
+                        delegateVariable,
+                        Expression.Condition(
+                            Expression.ReferenceEqual(serviceVariable, Expression.Constant(null)),
+                            Expression.Constant(null, ParameterType),
+                            Expression.Lambda(
+                                Expression.Call(
+                                    serviceVariable,
+                                    Method,
+                                    parameters),
+                                parameters))),
+                    delegateVariable
+                });
+        }
     }
 }

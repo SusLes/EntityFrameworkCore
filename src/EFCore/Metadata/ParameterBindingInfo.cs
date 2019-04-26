@@ -1,13 +1,11 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
-using System;
 using System.Linq.Expressions;
 using JetBrains.Annotations;
-using Microsoft.EntityFrameworkCore.Internal;
-using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 
-namespace Microsoft.EntityFrameworkCore.Metadata.Internal
+namespace Microsoft.EntityFrameworkCore.Metadata
 {
     /// <summary>
     ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -15,9 +13,9 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
     ///     any release. You should only use it directly in your code with extreme caution and knowing that
     ///     doing so can result in application failures when updating to a new Entity Framework Core release.
     /// </summary>
-    public abstract class ServiceParameterBinding : ParameterBinding
+    public readonly struct ParameterBindingInfo
     {
-        private Func<MaterializationContext, IEntityType, object, object> _serviceDelegate;
+        private readonly int[] _indexMap;
 
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -25,13 +23,14 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        protected ServiceParameterBinding(
-            [NotNull] Type parameterType,
-            [NotNull] Type serviceType,
-            [CanBeNull] IPropertyBase consumedProperty = null)
-            : base(parameterType, consumedProperty != null ? new[] { consumedProperty } : Array.Empty<IPropertyBase>())
+        public ParameterBindingInfo(
+            [NotNull] IEntityType entityType,
+            [NotNull] Expression materializationContextExpression,
+            [CanBeNull] int[] indexMap)
         {
-            ServiceType = serviceType;
+            _indexMap = indexMap;
+            EntityType = entityType;
+            MaterializationContextExpression = materializationContextExpression;
         }
 
         /// <summary>
@@ -40,7 +39,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        public virtual Type ServiceType { get; }
+        public IEntityType EntityType { get; }
 
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -48,10 +47,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        public override Expression BindToParameter(ParameterBindingInfo bindingInfo)
-            => BindToParameter(
-                bindingInfo.MaterializationContextExpression,
-                Expression.Constant(bindingInfo.EntityType));
+        public Expression MaterializationContextExpression { get; }
 
         /// <summary>
         ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
@@ -59,29 +55,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         ///     any release. You should only use it directly in your code with extreme caution and knowing that
         ///     doing so can result in application failures when updating to a new Entity Framework Core release.
         /// </summary>
-        public abstract Expression BindToParameter(
-            [NotNull] Expression materializationExpression,
-            [NotNull] Expression entityTypeExpression);
-
-        /// <summary>
-        ///     This is an internal API that supports the Entity Framework Core infrastructure and not subject to
-        ///     the same compatibility standards as public APIs. It may be changed or removed without notice in
-        ///     any release. You should only use it directly in your code with extreme caution and knowing that
-        ///     doing so can result in application failures when updating to a new Entity Framework Core release.
-        /// </summary>
-        public virtual Func<MaterializationContext, IEntityType, object, object> ServiceDelegate
-            => NonCapturingLazyInitializer.EnsureInitialized(
-                ref _serviceDelegate, this, b =>
-                {
-                    var materializationContextParam = Expression.Parameter(typeof(MaterializationContext));
-                    var entityTypeParam = Expression.Parameter(typeof(IEntityType));
-                    var entityParam = Expression.Parameter(typeof(object));
-
-                    return Expression.Lambda<Func<MaterializationContext, IEntityType, object, object>>(
-                        b.BindToParameter(materializationContextParam, entityTypeParam),
-                        materializationContextParam,
-                        entityTypeParam,
-                        entityParam).Compile();
-                });
+        public int GetValueBufferIndex([NotNull] IPropertyBase property)
+            => _indexMap?[property.GetIndex()] ?? property.GetIndex();
     }
 }
